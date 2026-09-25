@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protótipo 3D: Mesa Oculta no Ripado com Nicho e Bancos</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Three.js e OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        wood: {
+                            light: '#d4a373',
+                            warm: '#b07d4f',
+                            dark: '#5c3d2e',
+                            freijo: '#a67c52'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; user-select: none; }
+        #canvas-container { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+    </style>
+</head>
+<body class="h-full text-slate-100 overflow-hidden">
+
+    <!-- Canvas 3D -->
+    <div id="canvas-container"></div>
+
+    <!-- Screen Loading Overlay -->
+    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 transition-opacity duration-500">
+        <div class="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <h2 class="text-xl font-bold text-slate-200">Gerando Protótipo 3D...</h2>
+        <p class="text-slate-400 text-sm mt-1">Renderizando mesa oculta, nicho interno e compartimento dos bancos</p>
+    </div>
+
+    <!-- UI Overlay principal -->
+    <div class="relative z-10 flex flex-col h-screen pointer-events-none p-4 sm:p-6 justify-between">
+        
+        <!-- Header Controls -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pointer-events-auto">
+            <div class="glass-panel p-4 rounded-2xl shadow-2xl max-w-md">
+                <div class="flex items-center space-x-3">
+                    <span class="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl">
+                        <i class="fa-solid fa-chair text-xl"></i>
+                    </span>
+                    <div>
+                        <h1 class="text-lg font-bold text-white leading-tight">Mesa Oculta & Compartimento dos Bancos</h1>
+                        <p class="text-xs text-slate-400">Nicho interno embutido no painel ripado</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botões de Câmera & Visão -->
+            <div class="glass-panel p-2 rounded-2xl flex flex-wrap items-center gap-1.5 shadow-xl">
+                <button onclick="setCameraView('stools')" class="px-3 py-2 text-xs font-semibold rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition flex items-center gap-1.5 border border-amber-500/30">
+                    <i class="fa-solid fa-magnifying-glass-plus"></i> Ver Bancos no Nicho
+                </button>
+                <button id="btn-xray" onclick="toggleXrayMode()" class="px-3 py-2 text-xs font-medium rounded-xl bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1.5 border border-slate-700">
+                    <i class="fa-solid fa-eye"></i> Modo Raio-X (Transparência)
+                </button>
+                <div class="h-6 w-[1px] bg-slate-700 mx-1 hidden sm:block"></div>
+                <button onclick="setCameraView('front')" class="px-3 py-2 text-xs font-medium rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-border-all"></i> Frontal
+                </button>
+                <button onclick="setCameraView('iso')" class="px-3 py-2 text-xs font-medium rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-cubes"></i> Perspectiva
+                </button>
+            </div>
+        </header>
+
+        <!-- Bottom Control Panel -->
+        <footer class="pointer-events-auto flex flex-col md:flex-row gap-4 items-end justify-between">
+            
+            <!-- Painel de Modos de Ação -->
+            <div class="glass-panel p-4 rounded-2xl w-full md:w-auto shadow-2xl flex flex-wrap gap-3 items-center">
+                
+                <!-- Botão Toggle Mesa -->
+                <button id="btn-toggle-desk" onclick="toggleDeskState()" class="flex-1 md:flex-none px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl transition shadow-lg flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-door-open text-base" id="desk-icon"></i>
+                    <span id="desk-btn-text">Abrir Mesa</span>
+                </button>
+
+                <!-- Botão Mover Bancos -->
+                <button id="btn-toggle-stools" onclick="toggleStoolsState()" class="flex-1 md:flex-none px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold rounded-xl transition flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-box-open text-amber-400"></i>
+                    <span id="stools-btn-text">Tirar Bancos do Nicho</span>
+                </button>
+
+                <!-- Toggle LED -->
+                <button id="btn-toggle-led" onclick="toggleLEDs()" class="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 rounded-xl transition flex items-center justify-center" title="Ligar/Desligar Fita LED">
+                    <i class="fa-solid fa-lightbulb text-base"></i>
+                </button>
+
+                <div class="h-8 w-[1px] bg-slate-800 hidden md:block"></div>
+
+                <!-- Seletor de Madeira -->
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs text-slate-400 font-medium hidden sm:inline">Madeira:</span>
+                    <button onclick="changeWoodFinish('freijo')" class="w-8 h-8 rounded-full bg-[#a67c52] border-2 border-white/50 focus:border-amber-400 transition" title="Freijó"></button>
+                    <button onclick="changeWoodFinish('oak')" class="w-8 h-8 rounded-full bg-[#d4a373] border-2 border-transparent focus:border-amber-400 transition" title="Carvalho Claro"></button>
+                    <button onclick="changeWoodFinish('walnut')" class="w-8 h-8 rounded-full bg-[#5c3d2e] border-2 border-transparent focus:border-amber-400 transition" title="Nogueira Escura"></button>
+                </div>
+            </div>
+
+            <!-- Guia explicativo / Detalhes dos Bancos -->
+        <div class="glass-panel p-4 rounded-2xl w-full md:max-w-md text-xs text-slate-300 space-y-2">
+            <div class="flex justify-between items-center font-semibold text-slate-200 border-b border-slate-800 pb-2">
+                <span><i class="fa-solid fa-screwdriver-wrench text-amber-400 mr-1"></i> Pé Desmontável & Ergonomia</span>
+                <span id="status-badge" class="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30">Bancos Guardados na Base</span>
+            </div>
+            <p class="leading-relaxed text-slate-300" id="info-description">
+                Pé tubular de aço com conexões desmontáveis de engate rápido. Bancos afastados a uma distância ergonômica da mesa para permitir espaço confortável para as pernas ao sentar.
+            </p>
+            <div class="grid grid-cols-2 gap-2 text-[11px] text-slate-400 pt-1">
+                <div class="bg-slate-800/80 p-2 rounded-lg border border-slate-700/50">
+                    <span class="block text-amber-400 font-semibold">Distância do Banco:</span>
+                    <span>Afastado a 1,10m (Ergonômico)</span>
+                </div>
+                <div class="bg-slate-800/80 p-2 rounded-lg border border-slate-700/50">
+                    <span class="block text-amber-400 font-semibold">Estrutura do Pé:</span>
+                    <span>Tubular Desmontável c/ Trava</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<script>
+    let scene, camera, renderer, controls;
+    let deskPivot, deskGroup, stool1, stool2, deskLeg;
+    let nichePointLight, wallLedLight1, wallLedLight2;
+    let woodMaterial, darkWoodMaterial, metalMaterial, wallMaterial, cushionMaterial, ledMaterial;
+    
+    // Estado da animação
+    let isDeskOpen = false;
+    let isStoolsOut = false;
+    let ledsOn = true;
+    let isXrayMode = false;
+
+    let deskAngle = 0; // 0 = fechado (vertical), Math.PI/2 = aberto (horizontal)
+    let stoolFoldProgress = 0; // 0 = pés dobrados (fechados), 1 = pés desdobrados (abertos)
+    let targetStoolFold = 0;
+    
+    let stoolRotX = Math.PI / 2; // Assento virado de frente quando guardado
+    let targetStoolRotX = Math.PI / 2;
+
+    // Posição dos bancos dobrados e desdobrados (afastados para maior espaço e conforto)
+    let stool1StoredPos = { x: -0.25, y: -0.225, z: -0.6075 };
+    let stool2StoredPos = { x: 0.25, y: -0.225, z: -0.6075 };
+    
+    let stool1DeployedPos = { x: -0.42, y: -1.10, z: 1.10 };
+    let stool2DeployedPos = { x: 0.42, y: -1.10, z: 1.10 };
+
+    let legStoredPos = { x: 0, y: 0.14, z: -0.20, rx: 0, ry: 0, rz: 0 };
+    let legDeployedPos = { x: 0, y: -0.725, z: 0.68, rx: 0, ry: 0, rz: 0 };
+
+    // Alvos de animação
+    let targetDeskAngle = 0;
+    let targetStool1Pos = { ...stool1StoredPos };
+    let targetStool2Pos = { ...stool2StoredPos };
+    let currentLegPos = { ...legStoredPos };
+    let targetLegPos = { ...legStoredPos };
+
+        // Temas de madeira
+        const woodThemes = {
+            freijo: { primary: '#a67c52', secondary: '#5c3d2e', slatGap: '#1e1b18' },
+            oak: { primary: '#c99e71', secondary: '#7a5a3a', slatGap: '#1e1b18' },
+            walnut: { primary: '#4a3225', secondary: '#2b1a12', slatGap: '#0f0b08' }
+        };
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // 1. Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.08);
+
+            // 2. Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, -0.1, 2.5);
+
+            // 3. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.05;
+            container.appendChild(renderer.domElement);
+
+            // 4. Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 + 0.05;
+            controls.minDistance = 1.0;
+            controls.maxDistance = 6.0;
+            controls.target.set(0, -0.1, 0);
+
+            // 5. Materiais
+            createMaterials();
+
+            // 6. Iluminação
+            setupLighting();
+
+            // 7. Construção do Cenário e Móvel
+            buildEnvironment();
+            buildSlattedWallAndNiches();
+            buildFoldDownDesk();
+            buildStools();
+            buildRemovableLeg();
+            buildExtraWallDecorations();
+
+            // Esconder Tela de Loading
+            setTimeout(() => {
+                const loader = document.getElementById('loading');
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.remove(), 500);
+            }, 600);
+
+            // Responsive Event
+            window.addEventListener('resize', onWindowResize);
+
+            // Loop de Animação
+            animate();
+        }
+
+        function createWoodTexture(colorHex, detailColorHex) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = colorHex;
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.fillStyle = detailColorHex;
+            for (let i = 0; i < 400; i++) {
+                const y = Math.random() * 512;
+                const h = 1 + Math.random() * 3;
+                ctx.globalAlpha = 0.03 + Math.random() * 0.08;
+                ctx.fillRect(0, y, 512, h);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        function createMaterials() {
+            const woodTex = createWoodTexture('#a67c52', '#422a1d');
+            
+            woodMaterial = new THREE.MeshStandardMaterial({
+                map: woodTex,
+                roughness: 0.55,
+                metalness: 0.05
+            });
+
+            darkWoodMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2e1c12,
+                roughness: 0.7
+            });
+
+            metalMaterial = new THREE.MeshStandardMaterial({
+                color: 0x222222,
+                metalness: 0.85,
+                roughness: 0.25
+            });
+
+            wallMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                roughness: 0.9
+            });
+
+            cushionMaterial = new THREE.MeshStandardMaterial({
+                color: 0xd97706, // Tom terracota/âmbar para destaque
+                roughness: 0.75
+            });
+
+            ledMaterial = new THREE.MeshBasicMaterial({
+                color: 0xfff176
+            });
+        }
+
+        function setupLighting() {
+            // Luz Ambiente Suave
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+            scene.add(ambientLight);
+
+            // Luz Direcional Principal
+            const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.2);
+            dirLight.position.set(3, 4, 3);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.bias = -0.0001;
+            scene.add(dirLight);
+
+            // Luz Suave de Preenchimento
+            const fillLight = new THREE.DirectionalLight(0x90b4ce, 0.45);
+            fillLight.position.set(-3, 2, 2);
+            scene.add(fillLight);
+
+            // Luzes LED para os Nichos
+            nichePointLight = new THREE.PointLight(0xffb74d, 1.8, 2.2);
+            nichePointLight.position.set(0, 0.25, -0.05);
+            scene.add(nichePointLight);
+
+            wallLedLight1 = new THREE.PointLight(0xffb74d, 1.0, 1.5);
+            wallLedLight1.position.set(-0.8, 0.75, -0.05);
+            scene.add(wallLedLight1);
+
+            wallLedLight2 = new THREE.PointLight(0xffb74d, 1.0, 1.5);
+            wallLedLight2.position.set(0.8, 0.55, -0.05);
+            scene.add(wallLedLight2);
+        }
+
+        function buildEnvironment() {
+            // Chão posicionado a -1.10m para garantir altura exata de mesa (74cm) e banco (44cm)
+            const floorGeo = new THREE.PlaneGeometry(10, 10);
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: 0x0f172a,
+                roughness: 0.4,
+                metalness: 0.1
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -1.10;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Parede de Fundo Principal
+            const wallGeo = new THREE.PlaneGeometry(10, 6);
+            const wall = new THREE.Mesh(wallGeo, wallMaterial);
+            wall.position.z = -0.3;
+            wall.receiveShadow = true;
+            scene.add(wall);
+        }
+
+        function buildSlattedWallAndNiches() {
+            const wallGroup = new THREE.Group();
+
+            const slatWidth = 0.04;
+            const slatGap = 0.02;
+            const step = slatWidth + slatGap; // 0.06m grid alignment
+            const wallWidth = 2.8;
+            const wallHeight = 2.4;
+
+            // Dimensões do Nicho Principal Embutido
+            const deskNicheW = 1.04;
+            const deskNicheH = 0.74;
+            const deskNicheY = 0.0;
+
+            // Fundo do Nicho Principal
+            const nicheBackGeo = new THREE.BoxGeometry(deskNicheW, deskNicheH, 0.02);
+            const nicheBack = new THREE.Mesh(nicheBackGeo, darkWoodMaterial);
+            nicheBack.position.set(0, deskNicheY, -0.28);
+            nicheBack.receiveShadow = true;
+            scene.add(nicheBack);
+
+            // Estrutura das Paredes Internas do Nicho
+            const topNiche = new THREE.Mesh(new THREE.BoxGeometry(deskNicheW, 0.02, 0.26), darkWoodMaterial);
+            topNiche.position.set(0, deskNicheY + deskNicheH/2 - 0.01, -0.15);
+            scene.add(topNiche);
+
+            const botNiche = new THREE.Mesh(new THREE.BoxGeometry(deskNicheW, 0.02, 0.26), darkWoodMaterial);
+            botNiche.position.set(0, deskNicheY - deskNicheH/2 + 0.01, -0.15);
+            scene.add(botNiche);
+
+            // Prateleira Intermediária no Nicho
+            const upperShelf = new THREE.Mesh(new THREE.BoxGeometry(deskNicheW - 0.02, 0.02, 0.22), woodMaterial);
+            upperShelf.position.set(0, deskNicheY - 0.08, -0.16);
+            upperShelf.castShadow = true;
+            upperShelf.receiveShadow = true;
+            scene.add(upperShelf);
+
+            // Divisória Central Vertical na Parte Inferior do Nicho (Entre os dois bancos)
+            const centerDivider = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.26, 0.22), woodMaterial);
+            centerDivider.position.set(0, deskNicheY - 0.22, -0.16);
+            centerDivider.castShadow = true;
+            scene.add(centerDivider);
+
+            // Guias / Suportes Laterais de Encaixe dos Bancos na Parte Inferior
+            const rail1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.20), woodMaterial);
+            rail1.position.set(-0.48, deskNicheY - 0.22, -0.16);
+            const rail2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.20), woodMaterial);
+            rail2.position.set(0.48, deskNicheY - 0.22, -0.16);
+            scene.add(rail1, rail2);
+
+            // Suporte de Encaixe do Pé Removível no Nicho
+            const legClip = new THREE.Mesh(new THREE.BoxGeometry(0.90, 0.03, 0.04), metalMaterial);
+            legClip.position.set(0, deskNicheY + 0.22, -0.24);
+            scene.add(legClip);
+
+            // Fita LED no Nicho
+            const ledStripGeo = new THREE.BoxGeometry(deskNicheW - 0.1, 0.01, 0.02);
+            const ledStrip = new THREE.Mesh(ledStripGeo, ledMaterial);
+            ledStrip.position.set(0, deskNicheY + deskNicheH/2 - 0.02, -0.12);
+            scene.add(ledStrip);
+
+            // Decorar Nicho Principal (Livros na Prateleira Superior)
+            const bookColors = [0xef4444, 0x3b82f6, 0x10b981, 0xf59e0b];
+            for(let i=0; i<4; i++) {
+                const bookGeo = new THREE.BoxGeometry(0.03, 0.13 - i*0.01, 0.12);
+                const bookMat = new THREE.MeshStandardMaterial({ color: bookColors[i] });
+                const book = new THREE.Mesh(bookGeo, bookMat);
+                book.position.set(-0.38 + i*0.04, deskNicheY + 0.01, -0.15);
+                book.castShadow = true;
+                scene.add(book);
+            }
+
+            // Tomadas / Espelho no fundo do nicho
+            const outletGeo = new THREE.BoxGeometry(0.12, 0.07, 0.01);
+            const outletMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const outlet = new THREE.Mesh(outletGeo, outletMat);
+            outlet.position.set(0.32, deskNicheY + 0.12, -0.27);
+            scene.add(outlet);
+
+            // Gerar Ripamento da Parede perfeitamente alinhado com o da mesa (grade x = i * step)
+            const minI = Math.floor((-wallWidth / 2) / step);
+            const maxI = Math.ceil((wallWidth / 2) / step);
+
+            for (let i = minI; i <= maxI; i++) {
+                const x = i * step;
+                const inDeskX = x >= -deskNicheW/2 && x <= deskNicheW/2;
+
+                if (inDeskX) {
+                    const hTop = (wallHeight/2) - (deskNicheY + deskNicheH/2);
+                    const yTop = (deskNicheY + deskNicheH/2) + hTop/2;
+                    createSlat(x, yTop, hTop, wallGroup);
+
+                    const hBot = (deskNicheY - deskNicheH/2) - (-wallHeight/2);
+                    const yBot = (deskNicheY - deskNicheH/2) - hBot/2;
+                    createSlat(x, yBot, hBot, wallGroup);
+                } else {
+                    let cutForSideNiche = false;
+                    if (x > -1.05 && x < -0.55) {
+                        const hT = (wallHeight/2) - 0.95;
+                        createSlat(x, 0.95 + hT/2, hT, wallGroup);
+                        const hB = 0.55 - (-wallHeight/2);
+                        createSlat(x, 0.55 - hB/2, hB, wallGroup);
+                        cutForSideNiche = true;
+                    }
+                    if (x > 0.55 && x < 1.05) {
+                        const hT = (wallHeight/2) - 0.80;
+                        createSlat(x, 0.80 + hT/2, hT, wallGroup);
+                        const hB = 0.30 - (-wallHeight/2);
+                        createSlat(x, 0.30 - hB/2, hB, wallGroup);
+                        cutForSideNiche = true;
+                    }
+
+                    if (!cutForSideNiche) {
+                        createSlat(x, 0, wallHeight, wallGroup);
+                    }
+                }
+            }
+
+            scene.add(wallGroup);
+        }
+
+        function createSlat(x, y, height, parentGroup) {
+            if (height <= 0.05) return;
+            const slatGeo = new THREE.BoxGeometry(0.04, height, 0.03);
+            const slat = new THREE.Mesh(slatGeo, woodMaterial);
+            slat.position.set(x, y, -0.015);
+            slat.castShadow = true;
+            slat.receiveShadow = true;
+            parentGroup.add(slat);
+        }
+
+        function buildFoldDownDesk() {
+            deskPivot = new THREE.Group();
+            deskPivot.position.set(0, -0.36, 0.0);
+
+            deskGroup = new THREE.Group();
+
+            const slatWidth = 0.04;
+            const slatGap = 0.02;
+            const step = slatWidth + slatGap; // 0.06m
+            const numSlats = 17; // i = -8 a +8
+            const deskWidth = numSlats * step; // 1.02m
+            const deskHeight = 0.72;
+            const deskThickness = 0.025;
+
+            // Placa interna do tampo
+            const baseGeo = new THREE.BoxGeometry(deskWidth - 0.02, deskHeight, deskThickness);
+            const baseMesh = new THREE.Mesh(baseGeo, darkWoodMaterial);
+            baseMesh.position.set(0, deskHeight / 2, -deskThickness / 2);
+            baseMesh.castShadow = true;
+            baseMesh.receiveShadow = true;
+            deskGroup.add(baseMesh);
+
+            // Ripas de camuflagem do tampo (mesmo alinhamento X da parede: i * step)
+            for (let i = -8; i <= 8; i++) {
+                const x = i * step;
+                const slatGeo = new THREE.BoxGeometry(slatWidth, deskHeight, 0.025);
+                const slat = new THREE.Mesh(slatGeo, woodMaterial);
+                slat.position.set(x, deskHeight / 2, 0.0125);
+                slat.castShadow = true;
+                slat.receiveShadow = true;
+                deskGroup.add(slat);
+            }
+
+            // Encaixes metálicos sob a borda frontal da mesa para o pé metálico em U
+            const socketL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.04), metalMaterial);
+            socketL.position.set(-0.46, deskHeight - 0.02, -0.02);
+            const socketR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.04), metalMaterial);
+            socketR.position.set(0.46, deskHeight - 0.02, -0.02);
+            deskGroup.add(socketL, socketR);
+
+            deskPivot.add(deskGroup);
+            scene.add(deskPivot);
+        }
+
+        function buildStools() {
+            function createFoldingSlattedStool() {
+                const stool = new THREE.Group();
+                // Dimensões do banco: 42cm de largura, 44cm de altura (pés abertos), 30cm de profundidade
+                const w = 0.42, h = 0.44, d = 0.30;
+                const seatThickness = 0.025;
+
+                const blackIronMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x18181b,
+                    metalness: 0.8,
+                    roughness: 0.3
+                });
+
+                // --- ASSENTO AMPLIO RIPADO DE MADEIRA (42cm x 30cm) ---
+                const seatGroup = new THREE.Group();
+
+                // Molduras laterais do assento
+                const sideFrameL = new THREE.Mesh(new THREE.BoxGeometry(0.025, seatThickness, d), woodMaterial);
+                sideFrameL.position.set(-w/2 + 0.0125, h - seatThickness/2, 0);
+                sideFrameL.castShadow = true;
+
+                const sideFrameR = new THREE.Mesh(new THREE.BoxGeometry(0.025, seatThickness, d), woodMaterial);
+                sideFrameR.position.set(w/2 - 0.0125, h - seatThickness/2, 0);
+                sideFrameR.castShadow = true;
+
+                seatGroup.add(sideFrameL, sideFrameR);
+
+                // Ripas vazadas do assento
+                const slatWidth = 0.03;
+                const slatGap = 0.012;
+                const numSlats = 6;
+                const totalSlatZ = numSlats * slatWidth + (numSlats - 1) * slatGap;
+                const startZ = -totalSlatZ / 2 + slatWidth / 2;
+
+                for (let i = 0; i < numSlats; i++) {
+                    const z = startZ + i * (slatWidth + slatGap);
+                    const slat = new THREE.Mesh(new THREE.BoxGeometry(w - 0.05, seatThickness, slatWidth), woodMaterial);
+                    slat.position.set(0, h - seatThickness/2, z);
+                    slat.castShadow = true;
+                    seatGroup.add(slat);
+                }
+
+                stool.add(seatGroup);
+
+                // --- PÉS DOBRÁVEIS DE FERRO PRETO (Articulados para debaixo do assento) ---
+                const legHeight = h - seatThickness;
+                const legDepth = d - 0.06;
+                const tubeThick = 0.016;
+
+                // Grupo do Pé Esquerdo (pivoteia para dentro, rente ao fundo do assento)
+                const legLGroup = new THREE.Group();
+                legLGroup.position.set(-w/2 + 0.03, h - seatThickness, 0.01);
+
+                const barL1 = new THREE.Mesh(new THREE.BoxGeometry(tubeThick, legHeight, tubeThick), blackIronMaterial);
+                barL1.position.set(0, -legHeight/2, legDepth/2 - tubeThick/2);
+                barL1.castShadow = true;
+
+                const barL2 = new THREE.Mesh(new THREE.BoxGeometry(tubeThick, legHeight, tubeThick), blackIronMaterial);
+                barL2.position.set(0, -legHeight/2, -legDepth/2 + tubeThick/2);
+                barL2.castShadow = true;
+
+                const barLBase = new THREE.Mesh(new THREE.BoxGeometry(tubeThick, tubeThick, legDepth), blackIronMaterial);
+                barLBase.position.set(0, -legHeight + tubeThick/2, 0);
+                barLBase.castShadow = true;
+
+                // Dobradiça/Pivô metálico sob o assento
+                const hingeL = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, legDepth + 0.02, 12), blackIronMaterial);
+                hingeL.rotation.x = Math.PI / 2;
+                hingeL.position.set(0, 0, 0);
+
+                legLGroup.add(barL1, barL2, barLBase, hingeL);
+                stool.add(legLGroup);
+
+                // Grupo do Pé Direito (com leve recuo Z para dobrar perfeitamente sem colidir)
+                const legRGroup = new THREE.Group();
+                legRGroup.position.set(w/2 - 0.03, h - seatThickness, -0.01);
+
+                const barR1 = new THREE.Mesh(new THREE.BoxGeometry(tubeThick, legHeight, tubeThick), blackIronMaterial);
+                barR1.position.set(0, -legHeight/2, legDepth/2 - tubeThick/2);
+                barR1.castShadow = true;
+
+                const barR2 = new THREE.Mesh(new THREE.BoxGeometry(tubeThick, legHeight, tubeThick), blackIronMaterial);
+                barR2.position.set(0, -legHeight/2, -legDepth/2 + tubeThick/2);
+                barR2.castShadow = true;
+
+                const barRBase = new THREE.Mesh(new THREE.BoxGeometry(tubeThick, tubeThick, legDepth), blackIronMaterial);
+                barRBase.position.set(0, -legHeight + tubeThick/2, 0);
+                barRBase.castShadow = true;
+
+                const hingeR = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, legDepth + 0.02, 12), blackIronMaterial);
+                hingeR.rotation.x = Math.PI / 2;
+                hingeR.position.set(0, 0, 0);
+
+                legRGroup.add(barR1, barR2, barRBase, hingeR);
+                stool.add(legRGroup);
+
+                // Referências dos grupos dos pés para animação
+                stool.userData = { legLGroup, legRGroup };
+
+                return stool;
+            }
+
+            stool1 = createFoldingSlattedStool();
+            stool2 = createFoldingSlattedStool();
+
+            // Posição e rotação inicial: Guardados de frente no Nicho
+            stool1.position.set(stool1StoredPos.x, stool1StoredPos.y, stool1StoredPos.z);
+            stool2.position.set(stool2StoredPos.x, stool2StoredPos.y, stool2StoredPos.z);
+
+            stool1.rotation.x = stoolRotX;
+            stool2.rotation.x = stoolRotX;
+
+            scene.add(stool1);
+            scene.add(stool2);
+        }
+
+        function buildRemovableLeg() {
+            deskLeg = new THREE.Group();
+
+            const legWidth = 0.92;
+            const legHeight = 0.73;
+            const tubeThick = 0.02;
+
+            const blackMetalMat = new THREE.MeshStandardMaterial({
+                color: 0x18181b,
+                metalness: 0.85,
+                roughness: 0.25
+            });
+
+            const chromeConnectorMat = new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                metalness: 0.95,
+                roughness: 0.15
+            });
+
+            // Barra horizontal inferior (apoio no chão)
+            const botBar = new THREE.Mesh(
+                new THREE.BoxGeometry(legWidth, tubeThick, tubeThick),
+                blackMetalMat
+            );
+            botBar.position.set(0, -legHeight/2 + tubeThick/2, 0);
+            botBar.castShadow = true;
+            deskLeg.add(botBar);
+
+            // Sapatas emborrachadas nas extremidades inferiores
+            const footL = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.01, 0.04), blackMetalMat);
+            footL.position.set(-legWidth/2 + tubeThick/2, -legHeight/2 - 0.005, 0);
+            const footR = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.01, 0.04), blackMetalMat);
+            footR.position.set(legWidth/2 - tubeThick/2, -legHeight/2 - 0.005, 0);
+            deskLeg.add(footL, footR);
+
+            // Haste vertical esquerda
+            const leftBar = new THREE.Mesh(
+                new THREE.BoxGeometry(tubeThick, legHeight - 0.04, tubeThick),
+                blackMetalMat
+            );
+            leftBar.position.set(-legWidth/2 + tubeThick/2, -0.02, 0);
+            leftBar.castShadow = true;
+            deskLeg.add(leftBar);
+
+            // Haste vertical direita
+            const rightBar = new THREE.Mesh(
+                new THREE.BoxGeometry(tubeThick, legHeight - 0.04, tubeThick),
+                blackMetalMat
+            );
+            rightBar.position.set(legWidth/2 - tubeThick/2, -0.02, 0);
+            rightBar.castShadow = true;
+            deskLeg.add(rightBar);
+
+            // Manípulos / Pinos de Encaixe Desmontável e Trava de Segurança
+            const pinL = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.04, 16), chromeConnectorMat);
+            pinL.position.set(-legWidth/2 + tubeThick/2, legHeight/2 - 0.02, 0);
+            
+            const pinR = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.04, 16), chromeConnectorMat);
+            pinR.position.set(legWidth/2 - tubeThick/2, legHeight/2 - 0.02, 0);
+
+            // Botões/Manípulos giratórios de trava rápida (Quick-Release)
+            const knobL = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.015, 12), blackMetalMat);
+            knobL.rotation.z = Math.PI / 2;
+            knobL.position.set(-legWidth/2 - 0.012, legHeight/2 - 0.04, 0);
+
+            const knobR = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.015, 12), blackMetalMat);
+            knobR.rotation.z = Math.PI / 2;
+            knobR.position.set(legWidth/2 + 0.012, legHeight/2 - 0.04, 0);
+
+            deskLeg.add(pinL, pinR, knobL, knobR);
+
+            // Posição inicial: Guardado no Nicho
+            deskLeg.position.set(legStoredPos.x, legStoredPos.y, legStoredPos.z);
+            scene.add(deskLeg);
+        }
+
+        function buildExtraWallDecorations() {
+            // Nicho Decorativo Esquerdo (Recesso da parede)
+            const nicheLGeo = new THREE.BoxGeometry(0.48, 0.38, 0.20);
+            const nicheL = new THREE.Mesh(nicheLGeo, darkWoodMaterial);
+            nicheL.position.set(-0.8, 0.75, -0.18);
+            nicheL.receiveShadow = true;
+            scene.add(nicheL);
+
+            // Vasinho de planta decorativo no nicho esquerdo
+            const potGeo = new THREE.CylinderGeometry(0.05, 0.04, 0.08, 16);
+            const potMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+            const pot = new THREE.Mesh(potGeo, potMat);
+            pot.position.set(-0.8, 0.63, -0.12);
+            pot.castShadow = true;
+            scene.add(pot);
+
+            const plantGeo = new THREE.SphereGeometry(0.07, 12, 12);
+            const plantMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
+            const plant = new THREE.Mesh(plantGeo, plantMat);
+            plant.position.set(-0.8, 0.71, -0.12);
+            plant.castShadow = true;
+            scene.add(plant);
+
+            // Nicho Decorativo Direito (Recesso da parede)
+            const nicheRGeo = new THREE.BoxGeometry(0.48, 0.48, 0.20);
+            const nicheR = new THREE.Mesh(nicheRGeo, darkWoodMaterial);
+            nicheR.position.set(0.8, 0.55, -0.18);
+            nicheR.receiveShadow = true;
+            scene.add(nicheR);
+
+            // Quadro decorativo / Porta-retrato no nicho direito
+            const frameGeo = new THREE.BoxGeometry(0.18, 0.24, 0.02);
+            const frameMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+            const frame = new THREE.Mesh(frameGeo, frameMat);
+            frame.position.set(0.8, 0.58, -0.14);
+            frame.castShadow = true;
+            scene.add(frame);
+        }
+
+        function toggleDeskState() {
+            isDeskOpen = !isDeskOpen;
+            targetDeskAngle = isDeskOpen ? Math.PI / 2 : 0;
+
+            const btnText = document.getElementById('desk-btn-text');
+            const btnIcon = document.getElementById('desk-icon');
+            const badge = document.getElementById('status-badge');
+            const info = document.getElementById('info-description');
+
+            if (isDeskOpen) {
+                btnText.innerText = "Fechar Mesa";
+                btnIcon.className = "fa-solid fa-door-closed text-base";
+                badge.innerText = isStoolsOut ? "Mesa Aberta com Pé Desmontável Fixado" : "Bancos Guardados + Pé Fixado na Mesa";
+                badge.className = "px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30";
+                info.innerText = "Mesa aberta em 90°. O pé tubular desmontável com trava rápida foi encaixado sob a borda da mesa para sustentação firme.";
+
+                // Encaixar o pé na mesa aberta
+                targetLegPos = { ...legDeployedPos };
+            } else {
+                btnText.innerText = "Abrir Mesa";
+                btnIcon.className = "fa-solid fa-door-open text-base";
+                badge.innerText = "Mesa Fechada";
+                badge.className = "px-2 py-0.5 rounded-full bg-slate-800 text-amber-400 border border-amber-500/30";
+                info.innerText = "Mesa rebatida e camuflada no ripado. O pé de apoio desmontável e os bancos estão desacoplados e guardados no nicho.";
+
+                // Guardar o pé no nicho
+                targetLegPos = { ...legStoredPos };
+
+                // Se fechar a mesa, guarda os bancos automaticamente
+                if (isStoolsOut) {
+                    toggleStoolsState();
+                }
+            }
+        }
+
+        function toggleStoolsState() {
+            if (!isDeskOpen && !isStoolsOut) {
+                toggleDeskState();
+            }
+
+            isStoolsOut = !isStoolsOut;
+            const btnText = document.getElementById('stools-btn-text');
+
+            if (isStoolsOut) {
+                btnText.innerText = "Guardar Bancos no Nicho";
+                targetStool1Pos = { ...stool1DeployedPos };
+                targetStool2Pos = { ...stool2DeployedPos };
+                targetStoolFold = 1; // Pés desdobrados (abertos em 90°)
+                targetStoolRotX = 0; // Assento na horizontal para uso
+            } else {
+                btnText.innerText = "Tirar Bancos do Nicho";
+                targetStool1Pos = { ...stool1StoredPos };
+                targetStool2Pos = { ...stool2StoredPos };
+                targetStoolFold = 0; // Pés dobrados (recolhidos rentes ao assento)
+                targetStoolRotX = Math.PI / 2; // Assento virado para a frente no nicho
+            }
+        }
+
+        function toggleXrayMode() {
+            isXrayMode = !isXrayMode;
+            deskGroup.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material.transparent = true;
+                    child.material.opacity = isXrayMode ? 0.25 : 1.0;
+                }
+            });
+
+            const xrayBtn = document.getElementById('btn-xray');
+            if (isXrayMode) {
+                xrayBtn.classList.add('bg-amber-500', 'text-slate-950', 'font-bold');
+                xrayBtn.classList.remove('bg-slate-800', 'text-slate-300');
+            } else {
+                xrayBtn.classList.remove('bg-amber-500', 'text-slate-950', 'font-bold');
+                xrayBtn.classList.add('bg-slate-800', 'text-slate-300');
+            }
+        }
+
+        function toggleLEDs() {
+            ledsOn = !ledsOn;
+            nichePointLight.intensity = ledsOn ? 1.8 : 0;
+            wallLedLight1.intensity = ledsOn ? 1.0 : 0;
+            wallLedLight2.intensity = ledsOn ? 1.0 : 0;
+            ledMaterial.color.setHex(ledsOn ? 0xfff176 : 0x333333);
+        }
+
+        function changeWoodFinish(themeKey) {
+            const theme = woodThemes[themeKey];
+            if (!theme) return;
+
+            const newTex = createWoodTexture(theme.primary, theme.secondary);
+            woodMaterial.map = newTex;
+            woodMaterial.needsUpdate = true;
+        }
+
+        function setCameraView(view) {
+        let targetPos, targetLookAt;
+
+        switch(view) {
+            case 'stools':
+                if (!isDeskOpen) toggleDeskState();
+                targetPos = new THREE.Vector3(0, -0.22, 1.7);
+                targetLookAt = new THREE.Vector3(0, -0.25, -0.1);
+                break;
+            case 'front':
+                targetPos = new THREE.Vector3(0, -0.1, 2.6);
+                targetLookAt = new THREE.Vector3(0, -0.1, 0);
+                break;
+            case 'iso':
+                targetPos = new THREE.Vector3(2.1, 0.9, 2.2);
+                targetLookAt = new THREE.Vector3(0, -0.2, 0);
+                break;
+        }
+
+        let progress = 0;
+            const startPos = camera.position.clone();
+            const startTarget = controls.target.clone();
+
+            function animCam() {
+                progress += 0.05;
+                if (progress <= 1) {
+                    camera.position.lerpVectors(startPos, targetPos, progress);
+                    controls.target.lerpVectors(startTarget, targetLookAt, progress);
+                    controls.update();
+                    requestAnimationFrame(animCam);
+                }
+            }
+            animCam();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Animação de rotação da mesa
+            deskAngle += (targetDeskAngle - deskAngle) * 0.08;
+            if (deskPivot) {
+                deskPivot.rotation.x = deskAngle;
+            }
+
+            // Animação de rotação do corpo dos bancos (assento de frente quando guardado / horizontal quando em uso)
+            stoolRotX += (targetStoolRotX - stoolRotX) * 0.08;
+
+            // Animação da posição dos Bancos
+            if (stool1 && stool2) {
+                stool1.rotation.x = stoolRotX;
+                stool2.rotation.x = stoolRotX;
+
+                stool1.position.x += (targetStool1Pos.x - stool1.position.x) * 0.08;
+                stool1.position.y += (targetStool1Pos.y - stool1.position.y) * 0.08;
+                stool1.position.z += (targetStool1Pos.z - stool1.position.z) * 0.08;
+
+                stool2.position.x += (targetStool2Pos.x - stool2.position.x) * 0.08;
+                stool2.position.y += (targetStool2Pos.y - stool2.position.y) * 0.08;
+                stool2.position.z += (targetStool2Pos.z - stool2.position.z) * 0.08;
+            }
+
+            // Animação de articulação/dobra dos pés dos bancos
+            stoolFoldProgress += (targetStoolFold - stoolFoldProgress) * 0.08;
+
+            if (stool1 && stool1.userData.legLGroup) {
+                // Rotação dos pés em 90° diretamente para debaixo do assento ripado
+                const foldAngleL = (1 - stoolFoldProgress) * (Math.PI / 2 - 0.05);
+                const foldAngleR = -(1 - stoolFoldProgress) * (Math.PI / 2 - 0.05);
+
+                stool1.userData.legLGroup.rotation.z = foldAngleL;
+                stool1.userData.legRGroup.rotation.z = foldAngleR;
+
+                stool2.userData.legLGroup.rotation.z = foldAngleL;
+                stool2.userData.legRGroup.rotation.z = foldAngleR;
+            }
+
+            // Animação do Pé Removível da Mesa
+            if (deskLeg) {
+                currentLegPos.x += (targetLegPos.x - currentLegPos.x) * 0.08;
+                currentLegPos.y += (targetLegPos.y - currentLegPos.y) * 0.08;
+                currentLegPos.z += (targetLegPos.z - currentLegPos.z) * 0.08;
+                deskLeg.position.set(currentLegPos.x, currentLegPos.y, currentLegPos.z);
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
